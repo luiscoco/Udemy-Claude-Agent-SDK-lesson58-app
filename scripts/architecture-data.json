@@ -1,6 +1,6 @@
 {
   "lanes": [
-    "Student UI",
+    "Student",
     "Docker harness",
     "Agent service",
     "SDK + CLI",
@@ -53,7 +53,7 @@
       "9. Mirror transcript entries externally"
     ],
     [
-      3,
+      2,
       4,
       "10. Commit after the mirror flush"
     ],
@@ -68,7 +68,7 @@
       "12. Restart the external store"
     ],
     [
-      4,
+      1,
       0,
       "13. Grade actual deployment evidence"
     ]
