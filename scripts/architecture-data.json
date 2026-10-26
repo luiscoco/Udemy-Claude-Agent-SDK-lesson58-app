@@ -108,11 +108,11 @@
       "number": 3,
       "title": "Inject private runtime configuration",
       "source": "src/deployment.ts",
-      "code": "const key = process.env.ANTHROPIC_API_KEY;\n    if (!key || /[\\r\\n]/.test(key))\n      throw new Error(\"Configure a valid private API key.\");\n    await writeFile(\n      join(this.folder, \"agent.env\"),\n      `ANTHROPIC_API_KEY=${key}\\nCLAUDE_MODEL=${process.env.CLAUDE_MODEL || \"claude-sonnet-4-6\"}\\nSERVICE_TOKEN=${this.token}\\nSTORE_TOKEN=${this.storeToken}\\nSTORE_URL=http://${this.id}-store:8080\\n`,\n      { mode: 0o600 },\n    );\n    await writeFile(join(this.folder,\"store.env\"),`SERVICE_TOKEN=${this.storeToken}\\nROLE=store\\n`,{mode:0o600});\n    await this.docker([\"network\", \"create\", this.network]);\n    await this.docker([\"volume\", \"create\", this.volume]);\n    await this.startStore();\n    await this.replica(\"a\");",
+      "code": "const key = process.env.ANTHROPIC_API_KEY;\n    if (!key || /[\\r\\n]/.test(key))\n      throw new Error(\"Configure a valid private API key.\");\n    await writeFile(\n      join(this.folder, \"agent.env\"),\n      `ANTHROPIC_API_KEY=${key}\\nCLAUDE_MODEL=${process.env.CLAUDE_MODEL || \"claude-sonnet-4-6\"}\\nSERVICE_TOKEN=${this.token}\\nSTORE_TOKEN=${this.storeToken}\\nSTORE_URL=http://${this.id}-store:8080\\n`,\n      { mode: 0o600 },\n    );",
       "language": "typescript",
       "explanation": "Write the private model key and per-run service credentials to an ignored temporary env file. Docker receives the filename; credentials never appear in recorded command arguments or UI evidence.",
       "firstLine": 55,
-      "lastLine": 67,
+      "lastLine": 62,
       "anchors": [
         "const key = process.env.ANTHROPIC_API_KEY;"
       ],
@@ -123,11 +123,11 @@
       "number": 4,
       "title": "Apply container resource boundaries",
       "source": "src/deployment.ts",
-      "code": "return [\n    \"--name\",\n    name,\n    \"--network\",\n    network,\n    \"--read-only\",\n    \"--cap-drop=ALL\",\n    \"--security-opt=no-new-privileges\",\n    \"--memory=2g\",\n    \"--cpus=2\",\n    \"--pids-limit=200\",\n    \"--tmpfs\",\n    \"/tmp:rw,nosuid,size=512m,uid=1000,gid=1000\",\n    \"--tmpfs\",\n    \"/work:rw,nosuid,size=64m,uid=1000,gid=1000\",",
+      "code": "return [\n    \"--name\",\n    name,\n    \"--network\",\n    network,\n    \"--read-only\",\n    \"--cap-drop=ALL\",\n    \"--security-opt=no-new-privileges\",\n    \"--memory=2g\",\n    \"--cpus=2\",\n    \"--pids-limit=200\",\n    \"--tmpfs\",\n    \"/tmp:rw,nosuid,size=512m,uid=1000,gid=1000\",",
       "language": "typescript",
       "explanation": "Run replicas with a read-only root, bounded memory/CPU/PIDs, dropped capabilities, no-new-privileges and explicit writable tmpfs paths. Model API access still needs the bridge network.",
       "firstLine": 8,
-      "lastLine": 22,
+      "lastLine": 20,
       "anchors": [
         "return ["
       ],

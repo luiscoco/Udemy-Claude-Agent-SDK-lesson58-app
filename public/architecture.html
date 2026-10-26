@@ -11,19 +11,14 @@ COPY package.json ./
 USER node
 ENV NODE_ENV=production HOST=0.0.0.0 PORT=8080
 EXPOSE 8080
-CMD [&quot;node&quot;, &quot;dist/service.js&quot;]</code></pre></section><section class="step workflow-step" id="workflow-step-03"><span class="number">03</span><h3>3. Inject private runtime configuration</h3><p>Write the private model key and per-run service credentials to an ignored temporary env file. Docker receives the filename; credentials never appear in recorded command arguments or UI evidence.</p><p class="source">Source: src/deployment.ts · lines 55–67 · selected source; surrounding code omitted</p><pre><code class="language-typescript">const key = process.env.ANTHROPIC_API_KEY;
+CMD [&quot;node&quot;, &quot;dist/service.js&quot;]</code></pre></section><section class="step workflow-step" id="workflow-step-03"><span class="number">03</span><h3>3. Inject private runtime configuration</h3><p>Write the private model key and per-run service credentials to an ignored temporary env file. Docker receives the filename; credentials never appear in recorded command arguments or UI evidence.</p><p class="source">Source: src/deployment.ts · lines 55–62 · selected source; surrounding code omitted</p><pre><code class="language-typescript">const key = process.env.ANTHROPIC_API_KEY;
     if (!key || /[\r\n]/.test(key))
       throw new Error(&quot;Configure a valid private API key.&quot;);
     await writeFile(
       join(this.folder, &quot;agent.env&quot;),
       `ANTHROPIC_API_KEY=${key}\nCLAUDE_MODEL=${process.env.CLAUDE_MODEL || &quot;claude-sonnet-4-6&quot;}\nSERVICE_TOKEN=${this.token}\nSTORE_TOKEN=${this.storeToken}\nSTORE_URL=http://${this.id}-store:8080\n`,
       { mode: 0o600 },
-    );
-    await writeFile(join(this.folder,&quot;store.env&quot;),`SERVICE_TOKEN=${this.storeToken}\nROLE=store\n`,{mode:0o600});
-    await this.docker([&quot;network&quot;, &quot;create&quot;, this.network]);
-    await this.docker([&quot;volume&quot;, &quot;create&quot;, this.volume]);
-    await this.startStore();
-    await this.replica(&quot;a&quot;);</code></pre></section><section class="step workflow-step" id="workflow-step-04"><span class="number">04</span><h3>4. Apply container resource boundaries</h3><p>Run replicas with a read-only root, bounded memory/CPU/PIDs, dropped capabilities, no-new-privileges and explicit writable tmpfs paths. Model API access still needs the bridge network.</p><p class="source">Source: src/deployment.ts · lines 8–22 · selected source; surrounding code omitted</p><pre><code class="language-typescript">return [
+    );</code></pre></section><section class="step workflow-step" id="workflow-step-04"><span class="number">04</span><h3>4. Apply container resource boundaries</h3><p>Run replicas with a read-only root, bounded memory/CPU/PIDs, dropped capabilities, no-new-privileges and explicit writable tmpfs paths. Model API access still needs the bridge network.</p><p class="source">Source: src/deployment.ts · lines 8–20 · selected source; surrounding code omitted</p><pre><code class="language-typescript">return [
     &quot;--name&quot;,
     name,
     &quot;--network&quot;,
@@ -35,9 +30,7 @@ CMD [&quot;node&quot;, &quot;dist/service.js&quot;]</code></pre></section><secti
     &quot;--cpus=2&quot;,
     &quot;--pids-limit=200&quot;,
     &quot;--tmpfs&quot;,
-    &quot;/tmp:rw,nosuid,size=512m,uid=1000,gid=1000&quot;,
-    &quot;--tmpfs&quot;,
-    &quot;/work:rw,nosuid,size=64m,uid=1000,gid=1000&quot;,</code></pre></section><section class="step workflow-step" id="workflow-step-05"><span class="number">05</span><h3>5. Authenticate the incoming request</h3><p>Require the random classroom gateway credential before chat or store operations. The browser cannot supply user identities; the host harness chooses Alice or Bob. This is a local teaching gateway, not a production identity provider.</p><p class="source">Source: src/service.ts · lines 50–54 · selected source; surrounding code omitted</p><pre><code class="language-typescript">if (req.headers.authorization !== &quot;Bearer &quot; + token) {
+    &quot;/tmp:rw,nosuid,size=512m,uid=1000,gid=1000&quot;,</code></pre></section><section class="step workflow-step" id="workflow-step-05"><span class="number">05</span><h3>5. Authenticate the incoming request</h3><p>Require the random classroom gateway credential before chat or store operations. The browser cannot supply user identities; the host harness chooses Alice or Bob. This is a local teaching gateway, not a production identity provider.</p><p class="source">Source: src/service.ts · lines 50–54 · selected source; surrounding code omitted</p><pre><code class="language-typescript">if (req.headers.authorization !== &quot;Bearer &quot; + token) {
     res.writeHead(401);
     res.end(&quot;Authentication required&quot;);
     return;

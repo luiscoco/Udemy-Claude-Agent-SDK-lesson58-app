@@ -117,11 +117,6 @@ const key = process.env.ANTHROPIC_API_KEY;
       `ANTHROPIC_API_KEY=${key}\nCLAUDE_MODEL=${process.env.CLAUDE_MODEL || "claude-sonnet-4-6"}\nSERVICE_TOKEN=${this.token}\nSTORE_TOKEN=${this.storeToken}\nSTORE_URL=http://${this.id}-store:8080\n`,
       { mode: 0o600 },
     );
-    await writeFile(join(this.folder,"store.env"),`SERVICE_TOKEN=${this.storeToken}\nROLE=store\n`,{mode:0o600});
-    await this.docker(["network", "create", this.network]);
-    await this.docker(["volume", "create", this.volume]);
-    await this.startStore();
-    await this.replica("a");
 ```
 
 ### 4. Apply container resource boundaries
@@ -144,8 +139,6 @@ return [
     "--pids-limit=200",
     "--tmpfs",
     "/tmp:rw,nosuid,size=512m,uid=1000,gid=1000",
-    "--tmpfs",
-    "/work:rw,nosuid,size=64m,uid=1000,gid=1000",
 ```
 
 ### 5. Authenticate the incoming request
