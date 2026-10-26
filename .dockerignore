@@ -1,0 +1,17 @@
+.env
+.env.*
+!.env.example
+.git
+node_modules
+.runtime
+.runtime-*.json
+dist
+teaching-material
+presentation
+output
+reviewed
+v3
+*.mp4
+*.mp3
+*.wav
+*.pptx

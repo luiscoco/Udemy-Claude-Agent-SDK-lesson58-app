@@ -1,0 +1,90 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Agent SDK LESSON 58 · Architecture and &lt;em&gt;UML workflow.&lt;/em&gt;</title><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/code-highlighting.css"></head><body><main><div class="brand"><a href="/">How <span>Claude Agent SDK</span> Works</a><span class="badge">LESSON 58 / DOCKER DEPLOYMENT</span></div><header class="hero"><div><div class="eyebrow">BUILD · DEPLOY · RESUME</div><h1>Architecture and <em>UML workflow.</em></h1><p class="lead">Every one of the thirteen steps includes matching coloured source code.</p></div><img src="/astronaut.png" alt="Course astronaut mascot"></header><nav class="nav" aria-label="Application sections"><a href="/">Application lab</a><a href="/learn.html">What you will learn</a><a href="/run.html">How to run</a><a href="/architecture.html" aria-current="page">Architecture & workflow</a><a href="/walkthrough.html">Code walkthrough</a><button id="theme" type="button">Dark mode</button></nav><p class="note">The host harness controls real containers. Each agent container runs query() and its CLI. The external writer stores actual transcript entries plus tenant/session mappings on an independent volume. Every step below includes matching source code.</p><a class="button" href="/architecture.svg" download>Download UML SVG</a><div class="diagram"><img src="/architecture.svg" alt="Thirteen-step evaluation harness sequence"></div><section class="step workflow-step" id="workflow-step-01"><span class="number">01</span><h3>1. Build for the target Linux platform</h3><p>The build stage installs the pinned SDK inside Linux. Keep its optional native CLI dependencies and compile the server. The separate runtime stage omits dev dependencies.</p><p class="source">Source: Dockerfile · lines 1–8 · selected source; surrounding code omitted</p><pre><code class="language-docker">FROM node:24-bookworm-slim@sha256:55fb5f5a527ea2c5c4a95f963e48ef90aa38c7b346054fdc8ee9957a2b55d205 AS build
+RUN apt-get update &amp;&amp; apt-get install -y --no-install-recommends git ca-certificates &amp;&amp; rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY package.json package-lock.json ./
+# Keep the SDK&#x27;s platform-specific optional CLI dependencies.
+RUN npm ci
+COPY tsconfig*.json ./
+COPY src ./src</code></pre></section><section class="step workflow-step" id="workflow-step-02"><span class="number">02</span><h3>2. Run a non-root runtime image</h3><p>Copy the compiled app and runtime dependencies, select the node user and start the actual HTTP SDK service. No model key is baked into the image.</p><p class="source">Source: Dockerfile · lines 13–20 · selected source; surrounding code omitted</p><pre><code class="language-docker">COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/dist ./dist
+COPY package.json ./
+USER node
+ENV NODE_ENV=production HOST=0.0.0.0 PORT=8080
+EXPOSE 8080
+CMD [&quot;node&quot;, &quot;dist/service.js&quot;]</code></pre></section><section class="step workflow-step" id="workflow-step-03"><span class="number">03</span><h3>3. Inject private runtime configuration</h3><p>Write the private model key and per-run service credentials to an ignored temporary env file. Docker receives the filename; credentials never appear in recorded command arguments or UI evidence.</p><p class="source">Source: src/deployment.ts · lines 55–67 · selected source; surrounding code omitted</p><pre><code class="language-typescript">const key = process.env.ANTHROPIC_API_KEY;
+    if (!key || /[\r\n]/.test(key))
+      throw new Error(&quot;Configure a valid private API key.&quot;);
+    await writeFile(
+      join(this.folder, &quot;agent.env&quot;),
+      `ANTHROPIC_API_KEY=${key}\nCLAUDE_MODEL=${process.env.CLAUDE_MODEL || &quot;claude-sonnet-4-6&quot;}\nSERVICE_TOKEN=${this.token}\nSTORE_TOKEN=${this.storeToken}\nSTORE_URL=http://${this.id}-store:8080\n`,
+      { mode: 0o600 },
+    );
+    await writeFile(join(this.folder,&quot;store.env&quot;),`SERVICE_TOKEN=${this.storeToken}\nROLE=store\n`,{mode:0o600});
+    await this.docker([&quot;network&quot;, &quot;create&quot;, this.network]);
+    await this.docker([&quot;volume&quot;, &quot;create&quot;, this.volume]);
+    await this.startStore();
+    await this.replica(&quot;a&quot;);</code></pre></section><section class="step workflow-step" id="workflow-step-04"><span class="number">04</span><h3>4. Apply container resource boundaries</h3><p>Run replicas with a read-only root, bounded memory/CPU/PIDs, dropped capabilities, no-new-privileges and explicit writable tmpfs paths. Model API access still needs the bridge network.</p><p class="source">Source: src/deployment.ts · lines 8–22 · selected source; surrounding code omitted</p><pre><code class="language-typescript">return [
+    &quot;--name&quot;,
+    name,
+    &quot;--network&quot;,
+    network,
+    &quot;--read-only&quot;,
+    &quot;--cap-drop=ALL&quot;,
+    &quot;--security-opt=no-new-privileges&quot;,
+    &quot;--memory=2g&quot;,
+    &quot;--cpus=2&quot;,
+    &quot;--pids-limit=200&quot;,
+    &quot;--tmpfs&quot;,
+    &quot;/tmp:rw,nosuid,size=512m,uid=1000,gid=1000&quot;,
+    &quot;--tmpfs&quot;,
+    &quot;/work:rw,nosuid,size=64m,uid=1000,gid=1000&quot;,</code></pre></section><section class="step workflow-step" id="workflow-step-05"><span class="number">05</span><h3>5. Authenticate the incoming request</h3><p>Require the random classroom gateway credential before chat or store operations. The browser cannot supply user identities; the host harness chooses Alice or Bob. This is a local teaching gateway, not a production identity provider.</p><p class="source">Source: src/service.ts · lines 50–54 · selected source; surrounding code omitted</p><pre><code class="language-typescript">if (req.headers.authorization !== &quot;Bearer &quot; + token) {
+    res.writeHead(401);
+    res.end(&quot;Authentication required&quot;);
+    return;
+  }</code></pre></section><section class="step workflow-step" id="workflow-step-06"><span class="number">06</span><h3>6. Resolve identity and serialize turns</h3><p>Use only the authenticated gateway’s known identity, reject invalid tasks and acquire the external per-tenant lease. Limit active queries per replica so concurrent turns cannot race within the demonstrated session.</p><p class="source">Source: src/service.ts · lines 103–108 · selected source; surrounding code omitted</p><pre><code class="language-typescript">const tenant = req.headers[&quot;x-classroom-user&quot;];
+    if (
+      typeof tenant !== &quot;string&quot; ||
+      ![&quot;alice&quot;, &quot;bob&quot;].includes(tenant) ||
+      typeof input.message !== &quot;string&quot; ||
+      input.message.length &gt; 2000</code></pre></section><section class="step workflow-step" id="workflow-step-07"><span class="number">07</span><h3>7. Load the retained session ID</h3><p>Get the tenant’s committed session ID from the external store. Use the same per-tenant working directory in every replica and pass resume plus the actual SessionStore adapter to the SDK.</p><p class="source">Source: src/service.ts · lines 147–153 · selected source; surrounding code omitted</p><pre><code class="language-typescript">const resume = await store.call(&quot;get&quot;, { tenant });
+      const options = {
+        cwd,
+        resume: resume || undefined,
+        sessionStore: store,
+        sessionStoreFlush: &quot;eager&quot; as const,
+        model: process.env.CLAUDE_MODEL || &quot;claude-sonnet-4-6&quot;,</code></pre></section><section class="step workflow-step" id="workflow-step-08"><span class="number">08</span><h3>8. Invoke query inside the container</h3><p>The real SDK starts its CLI subprocess inside the non-root agent container and yields actual messages. Observe native init IDs, text, mirror failures and terminal results; no model response is simulated.</p><p class="source">Source: src/service.ts · lines 191–197 · selected source; surrounding code omitted</p><pre><code class="language-typescript">run = query({ prompt: input.message, options });
+      for await (const m of run) {
+        if (m.type === &quot;system&quot; &amp;&amp; m.subtype === &quot;init&quot;)
+          send({
+            type: &quot;observation&quot;,
+            observation: {
+              kind: &quot;session-init&quot;,</code></pre></section><section class="step workflow-step" id="workflow-step-09"><span class="number">09</span><h3>9. Mirror transcript entries externally</h3><p>Send actual SDK transcript entries to the authenticated external writer and record only entry counts and IDs in browser evidence. This store mirrors transcripts, not arbitrary workspace files or memory.</p><p class="source">Source: src/remote-store.ts · lines 25–32 · selected source; surrounding code omitted</p><pre><code class="language-typescript">async append(key: SessionKey, entries: SessionStoreEntry[]) {
+    await this.call(&quot;append&quot;, { key, entries });
+    this.notify(&quot;store-append&quot;, {
+      sessionId: key.sessionId,
+      count: entries.length,
+    });
+  }
+  async load(key: SessionKey): Promise&lt;SessionStoreEntry[] | null&gt; {</code></pre></section><section class="step workflow-step" id="workflow-step-10"><span class="number">10</span><h3>10. Commit after the mirror flush</h3><p>Wait for the actual SDK iterator and final mirroring before saving a successful session mapping. A visible mirror failure prevents that commit even if the native answer succeeded.</p><p class="source">Source: src/service.ts · lines 216–219 · selected source; surrounding code omitted</p><pre><code class="language-typescript">// Wait for the SDK iterator and final mirror flush before committing the mapping.
+      if (lastResult?.subtype === &quot;success&quot; &amp;&amp; !mirrorFailed)
+        await store.call(&quot;set&quot;, { tenant, sessionId: lastResult.session_id });
+      if (lastResult) send({ type: &quot;result&quot;, result: lastResult });</code></pre></section><section class="step workflow-step" id="workflow-step-11"><span class="number">11</span><h3>11. Replace a replica and hydrate</h3><p>Delete this run’s owned agent container, launch a new one and check its actual container ID changed. The next query resumes from external storage and must recall the unpredictable conversation code.</p><p class="source">Source: src/runner.ts · lines 66–72 · selected source; surrounding code omitted</p><pre><code class="language-typescript">const old = stack.inspect[stack.id + &quot;-a&quot;].id;
+        await stack.remove(&quot;a&quot;);
+        await stack.replica(&quot;a&quot;);
+        checks.newContainer = old !== stack.inspect[stack.id + &quot;-a&quot;].id;
+      }
+      if (caseId === &quot;recovery&quot;) {
+        await stack.remove(&quot;store&quot;);</code></pre></section><section class="step workflow-step" id="workflow-step-12"><span class="number">12</span><h3>12. Restart the external store</h3><p>Recreate the external writer with the same independent Docker volume. The Recovery case checks that both the mapping and transcript survive replacing the store and agent containers.</p><p class="source">Source: src/deployment.ts · lines 122–131 · selected source; surrounding code omitted</p><pre><code class="language-typescript">async startStore() {
+    await this.launched(this.id + &quot;-store&quot;, [
+      &quot;-p&quot;,
+      &quot;127.0.0.1::8080&quot;,
+      &quot;--mount&quot;,
+      `type=volume,source=${this.volume},target=/data`,
+      &quot;--env-file&quot;,
+      join(this.folder,&quot;store.env&quot;),
+    ]);
+  }</code></pre></section><section class="step workflow-step" id="workflow-step-13"><span class="number">13</span><h3>13. Grade actual deployment evidence</h3><p>Require observed task checks and successful owned-resource cleanup. Persist sanitized evidence with actual native results and Docker configuration. A green label is computed from those measurements, not from fluent narration.</p><p class="source">Source: src/runner.ts · lines 145–149 · selected source; surrounding code omitted</p><pre><code class="language-typescript">checks.ownedResourcesCleaned = cleanupErrors.length === 0;
+  const passed =
+    !exception &amp;&amp;
+    Object.keys(checks).length &gt; 3 &amp;&amp;
+    Object.values(checks).every(Boolean);</code></pre></section><footer>CLAUDE AGENT SDK · LESSON 58 · CONTAINER · SERVICE · STORE<br>TypeScript · local runtime · API key stays on the server</footer></main><script src="/navigation.js"></script><script src="/prism.js"></script><script src="/prism-markup.min.js"></script><script src="/prism-sql.min.js"></script><script src="/prism-diff.min.js"></script><script src="/prism-yaml.min.js"></script><script src="/prism-markdown.min.js"></script><script src="/prism-python.min.js"></script><script src="/prism-docker.min.js"></script><script src="/code-highlighting.js"></script><script src="/marked.umd.js"></script><script src="/purify.min.js"></script></body></html>

@@ -1,0 +1,273 @@
+{
+  "lanes": [
+    "Student UI",
+    "Docker harness",
+    "Agent service",
+    "SDK + CLI",
+    "External store"
+  ],
+  "arrows": [
+    [
+      0,
+      1,
+      "1. Build for the target Linux platform"
+    ],
+    [
+      1,
+      2,
+      "2. Run a non-root runtime image"
+    ],
+    [
+      0,
+      1,
+      "3. Inject private runtime configuration"
+    ],
+    [
+      1,
+      2,
+      "4. Apply container resource boundaries"
+    ],
+    [
+      0,
+      2,
+      "5. Authenticate the incoming request"
+    ],
+    [
+      2,
+      4,
+      "6. Resolve identity and serialize turns"
+    ],
+    [
+      2,
+      4,
+      "7. Load the retained session ID"
+    ],
+    [
+      2,
+      3,
+      "8. Invoke query inside the container"
+    ],
+    [
+      3,
+      4,
+      "9. Mirror transcript entries externally"
+    ],
+    [
+      3,
+      4,
+      "10. Commit after the mirror flush"
+    ],
+    [
+      1,
+      2,
+      "11. Replace a replica and hydrate"
+    ],
+    [
+      1,
+      4,
+      "12. Restart the external store"
+    ],
+    [
+      4,
+      0,
+      "13. Grade actual deployment evidence"
+    ]
+  ],
+  "steps": [
+    {
+      "number": 1,
+      "title": "Build for the target Linux platform",
+      "source": "Dockerfile",
+      "code": "FROM node:24-bookworm-slim@sha256:55fb5f5a527ea2c5c4a95f963e48ef90aa38c7b346054fdc8ee9957a2b55d205 AS build\nRUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates && rm -rf /var/lib/apt/lists/*\nWORKDIR /app\nCOPY package.json package-lock.json ./\n# Keep the SDK's platform-specific optional CLI dependencies.\nRUN npm ci\nCOPY tsconfig*.json ./\nCOPY src ./src",
+      "language": "docker",
+      "explanation": "The build stage installs the pinned SDK inside Linux. Keep its optional native CLI dependencies and compile the server. The separate runtime stage omits dev dependencies.",
+      "firstLine": 1,
+      "lastLine": 8,
+      "anchors": [
+        "FROM node:24-bookworm-slim@sha256:55fb5f5a527ea2c5c4a95f963e48ef90aa38c7b346054fdc8ee9957a2b55d205 AS build"
+      ],
+      "sourceSHA256": "fa9deee768ea6b103c56c8ccb8fe7ac4161aaa342ddbe4656f7a0fa6e2de1cb5",
+      "narration": "Step 1. The build stage installs the pinned SDK inside Linux. Keep its optional native CLI dependencies and compile the server. The separate runtime stage omits dev dependencies. This source excerpt shows the corresponding application statement."
+    },
+    {
+      "number": 2,
+      "title": "Run a non-root runtime image",
+      "source": "Dockerfile",
+      "code": "COPY --from=build /app/node_modules ./node_modules\nCOPY --from=build /app/dist ./dist\nCOPY package.json ./\nUSER node\nENV NODE_ENV=production HOST=0.0.0.0 PORT=8080\nEXPOSE 8080\nCMD [\"node\", \"dist/service.js\"]",
+      "language": "docker",
+      "explanation": "Copy the compiled app and runtime dependencies, select the node user and start the actual HTTP SDK service. No model key is baked into the image.",
+      "firstLine": 13,
+      "lastLine": 20,
+      "anchors": [
+        "COPY --from=build /app/node_modules ./node_modules"
+      ],
+      "sourceSHA256": "fa9deee768ea6b103c56c8ccb8fe7ac4161aaa342ddbe4656f7a0fa6e2de1cb5",
+      "narration": "Step 2. Copy the compiled app and runtime dependencies, select the node user and start the actual HTTP SDK service. No model key is baked into the image. This source excerpt shows the corresponding application statement."
+    },
+    {
+      "number": 3,
+      "title": "Inject private runtime configuration",
+      "source": "src/deployment.ts",
+      "code": "const key = process.env.ANTHROPIC_API_KEY;\n    if (!key || /[\\r\\n]/.test(key))\n      throw new Error(\"Configure a valid private API key.\");\n    await writeFile(\n      join(this.folder, \"agent.env\"),\n      `ANTHROPIC_API_KEY=${key}\\nCLAUDE_MODEL=${process.env.CLAUDE_MODEL || \"claude-sonnet-4-6\"}\\nSERVICE_TOKEN=${this.token}\\nSTORE_TOKEN=${this.storeToken}\\nSTORE_URL=http://${this.id}-store:8080\\n`,\n      { mode: 0o600 },\n    );\n    await writeFile(join(this.folder,\"store.env\"),`SERVICE_TOKEN=${this.storeToken}\\nROLE=store\\n`,{mode:0o600});\n    await this.docker([\"network\", \"create\", this.network]);\n    await this.docker([\"volume\", \"create\", this.volume]);\n    await this.startStore();\n    await this.replica(\"a\");",
+      "language": "typescript",
+      "explanation": "Write the private model key and per-run service credentials to an ignored temporary env file. Docker receives the filename; credentials never appear in recorded command arguments or UI evidence.",
+      "firstLine": 55,
+      "lastLine": 67,
+      "anchors": [
+        "const key = process.env.ANTHROPIC_API_KEY;"
+      ],
+      "sourceSHA256": "cf5ad72bcfec54fdb64352ab705f871ac4fc07fac719502ddc692000026d7ecd",
+      "narration": "Step 3. Write the private model key and per-run service credentials to an ignored temporary env file. Docker receives the filename; credentials never appear in recorded command arguments or UI evidence. This source excerpt shows the corresponding application statement."
+    },
+    {
+      "number": 4,
+      "title": "Apply container resource boundaries",
+      "source": "src/deployment.ts",
+      "code": "return [\n    \"--name\",\n    name,\n    \"--network\",\n    network,\n    \"--read-only\",\n    \"--cap-drop=ALL\",\n    \"--security-opt=no-new-privileges\",\n    \"--memory=2g\",\n    \"--cpus=2\",\n    \"--pids-limit=200\",\n    \"--tmpfs\",\n    \"/tmp:rw,nosuid,size=512m,uid=1000,gid=1000\",\n    \"--tmpfs\",\n    \"/work:rw,nosuid,size=64m,uid=1000,gid=1000\",",
+      "language": "typescript",
+      "explanation": "Run replicas with a read-only root, bounded memory/CPU/PIDs, dropped capabilities, no-new-privileges and explicit writable tmpfs paths. Model API access still needs the bridge network.",
+      "firstLine": 8,
+      "lastLine": 22,
+      "anchors": [
+        "return ["
+      ],
+      "sourceSHA256": "cf5ad72bcfec54fdb64352ab705f871ac4fc07fac719502ddc692000026d7ecd",
+      "narration": "Step 4. Run replicas with a read-only root, bounded memory/CPU/PIDs, dropped capabilities, no-new-privileges and explicit writable tmpfs paths. Model API access still needs the bridge network. This source excerpt shows the corresponding application statement."
+    },
+    {
+      "number": 5,
+      "title": "Authenticate the incoming request",
+      "source": "src/service.ts",
+      "code": "if (req.headers.authorization !== \"Bearer \" + token) {\n    res.writeHead(401);\n    res.end(\"Authentication required\");\n    return;\n  }",
+      "language": "typescript",
+      "explanation": "Require the random classroom gateway credential before chat or store operations. The browser cannot supply user identities; the host harness chooses Alice or Bob. This is a local teaching gateway, not a production identity provider.",
+      "firstLine": 50,
+      "lastLine": 54,
+      "anchors": [
+        "if (req.headers.authorization !== \"Bearer \" + token) {"
+      ],
+      "sourceSHA256": "f33fb2ad458b197b4d27a3c4c69481b774af5f4227b7348642da8f1db5ab6dde",
+      "narration": "Step 5. Require the random classroom gateway credential before chat or store operations. The browser cannot supply user identities; the host harness chooses Alice or Bob. This is a local teaching gateway, not a production identity provider. This source excerpt shows the corresponding application statement."
+    },
+    {
+      "number": 6,
+      "title": "Resolve identity and serialize turns",
+      "source": "src/service.ts",
+      "code": "const tenant = req.headers[\"x-classroom-user\"];\n    if (\n      typeof tenant !== \"string\" ||\n      ![\"alice\", \"bob\"].includes(tenant) ||\n      typeof input.message !== \"string\" ||\n      input.message.length > 2000",
+      "language": "typescript",
+      "explanation": "Use only the authenticated gateway\u2019s known identity, reject invalid tasks and acquire the external per-tenant lease. Limit active queries per replica so concurrent turns cannot race within the demonstrated session.",
+      "firstLine": 103,
+      "lastLine": 108,
+      "anchors": [
+        "const tenant = req.headers[\"x-classroom-user\"];"
+      ],
+      "sourceSHA256": "f33fb2ad458b197b4d27a3c4c69481b774af5f4227b7348642da8f1db5ab6dde",
+      "narration": "Step 6. Use only the authenticated gateway\u2019s known identity, reject invalid tasks and acquire the external per-tenant lease. Limit active queries per replica so concurrent turns cannot race within the demonstrated session. This source excerpt shows the corresponding application statement."
+    },
+    {
+      "number": 7,
+      "title": "Load the retained session ID",
+      "source": "src/service.ts",
+      "code": "const resume = await store.call(\"get\", { tenant });\n      const options = {\n        cwd,\n        resume: resume || undefined,\n        sessionStore: store,\n        sessionStoreFlush: \"eager\" as const,\n        model: process.env.CLAUDE_MODEL || \"claude-sonnet-4-6\",",
+      "language": "typescript",
+      "explanation": "Get the tenant\u2019s committed session ID from the external store. Use the same per-tenant working directory in every replica and pass resume plus the actual SessionStore adapter to the SDK.",
+      "firstLine": 147,
+      "lastLine": 153,
+      "anchors": [
+        "const resume = await store.call(\"get\", { tenant });"
+      ],
+      "sourceSHA256": "f33fb2ad458b197b4d27a3c4c69481b774af5f4227b7348642da8f1db5ab6dde",
+      "narration": "Step 7. Get the tenant\u2019s committed session ID from the external store. Use the same per-tenant working directory in every replica and pass resume plus the actual SessionStore adapter to the SDK. This source excerpt shows the corresponding application statement."
+    },
+    {
+      "number": 8,
+      "title": "Invoke query inside the container",
+      "source": "src/service.ts",
+      "code": "run = query({ prompt: input.message, options });\n      for await (const m of run) {\n        if (m.type === \"system\" && m.subtype === \"init\")\n          send({\n            type: \"observation\",\n            observation: {\n              kind: \"session-init\",",
+      "language": "typescript",
+      "explanation": "The real SDK starts its CLI subprocess inside the non-root agent container and yields actual messages. Observe native init IDs, text, mirror failures and terminal results; no model response is simulated.",
+      "firstLine": 191,
+      "lastLine": 197,
+      "anchors": [
+        "run = query({ prompt: input.message, options });"
+      ],
+      "sourceSHA256": "f33fb2ad458b197b4d27a3c4c69481b774af5f4227b7348642da8f1db5ab6dde",
+      "narration": "Step 8. The real SDK starts its CLI subprocess inside the non-root agent container and yields actual messages. Observe native init IDs, text, mirror failures and terminal results; no model response is simulated. This source excerpt shows the corresponding application statement."
+    },
+    {
+      "number": 9,
+      "title": "Mirror transcript entries externally",
+      "source": "src/remote-store.ts",
+      "code": "async append(key: SessionKey, entries: SessionStoreEntry[]) {\n    await this.call(\"append\", { key, entries });\n    this.notify(\"store-append\", {\n      sessionId: key.sessionId,\n      count: entries.length,\n    });\n  }\n  async load(key: SessionKey): Promise<SessionStoreEntry[] | null> {",
+      "language": "typescript",
+      "explanation": "Send actual SDK transcript entries to the authenticated external writer and record only entry counts and IDs in browser evidence. This store mirrors transcripts, not arbitrary workspace files or memory.",
+      "firstLine": 25,
+      "lastLine": 32,
+      "anchors": [
+        "async append(key: SessionKey, entries: SessionStoreEntry[]) {"
+      ],
+      "sourceSHA256": "f899a1b0075678ab444f7480a4e14f5d524b0bb8f8182b181a6a4f1eef3643d2",
+      "narration": "Step 9. Send actual SDK transcript entries to the authenticated external writer and record only entry counts and IDs in browser evidence. This store mirrors transcripts, not arbitrary workspace files or memory. This source excerpt shows the corresponding application statement."
+    },
+    {
+      "number": 10,
+      "title": "Commit after the mirror flush",
+      "source": "src/service.ts",
+      "code": "// Wait for the SDK iterator and final mirror flush before committing the mapping.\n      if (lastResult?.subtype === \"success\" && !mirrorFailed)\n        await store.call(\"set\", { tenant, sessionId: lastResult.session_id });\n      if (lastResult) send({ type: \"result\", result: lastResult });",
+      "language": "typescript",
+      "explanation": "Wait for the actual SDK iterator and final mirroring before saving a successful session mapping. A visible mirror failure prevents that commit even if the native answer succeeded.",
+      "firstLine": 216,
+      "lastLine": 219,
+      "anchors": [
+        "// Wait for the SDK iterator and final mirror flush before committing the mapping."
+      ],
+      "sourceSHA256": "f33fb2ad458b197b4d27a3c4c69481b774af5f4227b7348642da8f1db5ab6dde",
+      "narration": "Step 10. Wait for the actual SDK iterator and final mirroring before saving a successful session mapping. A visible mirror failure prevents that commit even if the native answer succeeded. This source excerpt shows the corresponding application statement."
+    },
+    {
+      "number": 11,
+      "title": "Replace a replica and hydrate",
+      "source": "src/runner.ts",
+      "code": "const old = stack.inspect[stack.id + \"-a\"].id;\n        await stack.remove(\"a\");\n        await stack.replica(\"a\");\n        checks.newContainer = old !== stack.inspect[stack.id + \"-a\"].id;\n      }\n      if (caseId === \"recovery\") {\n        await stack.remove(\"store\");",
+      "language": "typescript",
+      "explanation": "Delete this run\u2019s owned agent container, launch a new one and check its actual container ID changed. The next query resumes from external storage and must recall the unpredictable conversation code.",
+      "firstLine": 66,
+      "lastLine": 72,
+      "anchors": [
+        "const old = stack.inspect[stack.id + \"-a\"].id;"
+      ],
+      "sourceSHA256": "24e65f41e6af973b295c7489263ae7141142c9335c0f69b7bfc4552e2c1b46bf",
+      "narration": "Step 11. Delete this run\u2019s owned agent container, launch a new one and check its actual container ID changed. The next query resumes from external storage and must recall the unpredictable conversation code. This source excerpt shows the corresponding application statement."
+    },
+    {
+      "number": 12,
+      "title": "Restart the external store",
+      "source": "src/deployment.ts",
+      "code": "async startStore() {\n    await this.launched(this.id + \"-store\", [\n      \"-p\",\n      \"127.0.0.1::8080\",\n      \"--mount\",\n      `type=volume,source=${this.volume},target=/data`,\n      \"--env-file\",\n      join(this.folder,\"store.env\"),\n    ]);\n  }",
+      "language": "typescript",
+      "explanation": "Recreate the external writer with the same independent Docker volume. The Recovery case checks that both the mapping and transcript survive replacing the store and agent containers.",
+      "firstLine": 122,
+      "lastLine": 131,
+      "anchors": [
+        "async startStore() {"
+      ],
+      "sourceSHA256": "cf5ad72bcfec54fdb64352ab705f871ac4fc07fac719502ddc692000026d7ecd",
+      "narration": "Step 12. Recreate the external writer with the same independent Docker volume. The Recovery case checks that both the mapping and transcript survive replacing the store and agent containers. This source excerpt shows the corresponding application statement."
+    },
+    {
+      "number": 13,
+      "title": "Grade actual deployment evidence",
+      "source": "src/runner.ts",
+      "code": "checks.ownedResourcesCleaned = cleanupErrors.length === 0;\n  const passed =\n    !exception &&\n    Object.keys(checks).length > 3 &&\n    Object.values(checks).every(Boolean);",
+      "language": "typescript",
+      "explanation": "Require observed task checks and successful owned-resource cleanup. Persist sanitized evidence with actual native results and Docker configuration. A green label is computed from those measurements, not from fluent narration.",
+      "firstLine": 145,
+      "lastLine": 149,
+      "anchors": [
+        "checks.ownedResourcesCleaned = cleanupErrors.length === 0;"
+      ],
+      "sourceSHA256": "24e65f41e6af973b295c7489263ae7141142c9335c0f69b7bfc4552e2c1b46bf",
+      "narration": "Step 13. Require observed task checks and successful owned-resource cleanup. Persist sanitized evidence with actual native results and Docker configuration. A green label is computed from those measurements, not from fluent narration. This source excerpt shows the corresponding application statement."
+    }
+  ]
+}

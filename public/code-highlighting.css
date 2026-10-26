@@ -1,0 +1,52 @@
+/* Accessible token palette on the lesson apps' navy panels, in both themes. */
+html body pre[class*="language-"],
+html body pre:has(> code[data-syntax-highlighted]) {
+  background: #102544;
+  color: #e7f0ff;
+  border: 1px solid #355071;
+  border-radius: 14px;
+  padding: 22px;
+  max-width: 100%;
+  overflow: auto;
+  white-space: pre;
+  overflow-wrap: normal;
+  tab-size: 2;
+}
+html body pre > code[class*="language-"] {
+  display: block;
+  color: #e7f0ff;
+  font: 19px/1.7 Consolas, "Cascadia Code", "Courier New", monospace;
+  text-shadow: none;
+  white-space: pre;
+  overflow-wrap: normal;
+  word-break: normal;
+  font-variant-ligatures: none;
+}
+html body pre code .token { font: inherit; background: transparent; }
+html body pre code .token.comment,
+html body pre code .token.prolog,
+html body pre code .token.doctype { color: #a5b5cb; }
+html body pre code .token.keyword,
+html body pre code .token.control-flow { color: #d2b1ff; }
+html body pre code .token.string,
+html body pre code .token.char,
+html body pre code .token.attr-value,
+html body pre code .token.regex { color: #a7e3a1; }
+html body pre code .token.property,
+html body pre code .token.literal-property,
+html body pre code .token.parameter,
+html body pre code .token.variable { color: #9bd6ff; }
+html body pre code .token.function,
+html body pre code .token.function-variable { color: #ffdd89; }
+html body pre code .token.number,
+html body pre code .token.boolean,
+html body pre code .token.constant { color: #ffc48b; }
+html body pre code .token.class-name,
+html body pre code .token.builtin,
+html body pre code .token.type { color: #70ddd0; }
+html body pre code .token.operator,
+html body pre code .token.punctuation { color: #dce6f3; }
+html body pre code ::selection { background: #355b86; color: #fff; }
+@media (max-width: 650px) {
+  html body pre[class*="language-"], html body pre:has(> code[data-syntax-highlighted]) { padding: 16px; }
+}
